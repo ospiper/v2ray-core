@@ -167,7 +167,7 @@ func (h *Handler) AddUser(ctx context.Context, user *protocol.MemoryUser) error 
 }
 
 func (h *Handler) RemoveUser(ctx context.Context, email string) error {
-	if len(email) == 0 {
+	if email == "" {
 		return newError("Email must not be empty.")
 	}
 	if !h.usersByEmail.Remove(email) {
@@ -250,7 +250,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection i
 	}
 
 	if request.Command != protocol.RequestCommandMux {
-		log.Record(&log.AccessMessage{
+		ctx = log.ContextWithAccessMessage(ctx, &log.AccessMessage{
 			From:   connection.RemoteAddr(),
 			To:     request.Destination(),
 			Status: log.AccessAccepted,
