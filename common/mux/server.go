@@ -4,17 +4,17 @@ import (
 	"context"
 	"io"
 
-	"v2ray.com/core"
-	"v2ray.com/core/common"
-	"v2ray.com/core/common/buf"
-	"v2ray.com/core/common/errors"
-	"v2ray.com/core/common/log"
-	"v2ray.com/core/common/net"
-	"v2ray.com/core/common/protocol"
-	"v2ray.com/core/common/session"
-	"v2ray.com/core/features/routing"
-	"v2ray.com/core/transport"
-	"v2ray.com/core/transport/pipe"
+	core "github.com/v2fly/v2ray-core/v5"
+	"github.com/v2fly/v2ray-core/v5/common"
+	"github.com/v2fly/v2ray-core/v5/common/buf"
+	"github.com/v2fly/v2ray-core/v5/common/errors"
+	"github.com/v2fly/v2ray-core/v5/common/log"
+	"github.com/v2fly/v2ray-core/v5/common/net"
+	"github.com/v2fly/v2ray-core/v5/common/protocol"
+	"github.com/v2fly/v2ray-core/v5/common/session"
+	"github.com/v2fly/v2ray-core/v5/features/routing"
+	"github.com/v2fly/v2ray-core/v5/transport"
+	"github.com/v2fly/v2ray-core/v5/transport/pipe"
 )
 
 type Server struct {
@@ -35,7 +35,7 @@ func (s *Server) Type() interface{} {
 	return s.dispatcher.Type()
 }
 
-// Dispatch impliments routing.Dispatcher
+// Dispatch implements routing.Dispatcher
 func (s *Server) Dispatch(ctx context.Context, dest net.Destination) (*transport.Link, error) {
 	if dest.Address != muxCoolAddress {
 		return s.dispatcher.Dispatch(ctx, dest)
@@ -118,8 +118,9 @@ func (w *ServerWorker) handleStatusNew(ctx context.Context, meta *FrameMetadata,
 		}
 		if inbound := session.InboundFromContext(ctx); inbound != nil && inbound.Source.IsValid() {
 			msg.From = inbound.Source
+			msg.Email = inbound.User.Email
 		}
-		log.Record(msg)
+		ctx = log.ContextWithAccessMessage(ctx, msg)
 	}
 	link, err := w.dispatcher.Dispatch(ctx, meta.Target)
 	if err != nil {
@@ -231,7 +232,7 @@ func (w *ServerWorker) run(ctx context.Context) {
 	input := w.link.Reader
 	reader := &buf.BufferedReader{Reader: input}
 
-	defer w.sessionManager.Close() // nolint: errcheck
+	defer w.sessionManager.Close()
 
 	for {
 		select {

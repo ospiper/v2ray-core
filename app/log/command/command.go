@@ -1,19 +1,19 @@
-// +build !confonly
-
 package command
 
-//go:generate errorgen
+//go:generate go run github.com/v2fly/v2ray-core/v5/common/errors/errorgen
 
 import (
 	"context"
 
 	grpc "google.golang.org/grpc"
 
-	"v2ray.com/core"
-	"v2ray.com/core/app/log"
-	"v2ray.com/core/common"
+	core "github.com/v2fly/v2ray-core/v5"
+	"github.com/v2fly/v2ray-core/v5/app/log"
+	"github.com/v2fly/v2ray-core/v5/common"
+	cmlog "github.com/v2fly/v2ray-core/v5/common/log"
 )
 
+// LoggerServer is the implemention of LoggerService
 type LoggerServer struct {
 	V *core.Instance
 }
@@ -32,6 +32,33 @@ func (s *LoggerServer) RestartLogger(ctx context.Context, request *RestartLogger
 	}
 	return &RestartLoggerResponse{}, nil
 }
+
+// FollowLog implements LoggerService.
+func (s *LoggerServer) FollowLog(_ *FollowLogRequest, stream LoggerService_FollowLogServer) error {
+	logger := s.V.GetFeature((*log.Instance)(nil))
+	if logger == nil {
+		return newError("unable to get logger instance")
+	}
+	follower, ok := logger.(cmlog.Follower)
+	if !ok {
+		return newError("logger not support following")
+	}
+	done := make(chan struct{})
+	f := func(msg cmlog.Message) {
+		err := stream.Send(&FollowLogResponse{
+			Message: msg.String(),
+		})
+		if err != nil {
+			close(done)
+		}
+	}
+	follower.AddFollower(f)
+	defer follower.RemoveFollower(f)
+	<-done
+	return nil
+}
+
+func (s *LoggerServer) mustEmbedUnimplementedLoggerServiceServer() {}
 
 type service struct {
 	v *core.Instance

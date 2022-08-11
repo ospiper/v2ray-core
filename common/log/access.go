@@ -1,10 +1,10 @@
 package log
 
 import (
-	"strings"
 	"context"
+	"strings"
 
-	"v2ray.com/core/common/serial"
+	"github.com/v2fly/v2ray-core/v5/common/serial"
 )
 
 type logKey int
@@ -25,7 +25,8 @@ type AccessMessage struct {
 	To     interface{}
 	Status AccessStatus
 	Reason interface{}
-	Detour interface{}
+	Email  string
+	Detour string
 }
 
 func (m *AccessMessage) String() string {
@@ -35,10 +36,23 @@ func (m *AccessMessage) String() string {
 	builder.WriteString(string(m.Status))
 	builder.WriteByte(' ')
 	builder.WriteString(serial.ToString(m.To))
-	builder.WriteByte(' ')
-	builder.WriteString(serial.ToString(m.Detour))
-	builder.WriteByte(' ')
-	builder.WriteString(serial.ToString(m.Reason))
+
+	if len(m.Detour) > 0 {
+		builder.WriteString(" [")
+		builder.WriteString(m.Detour)
+		builder.WriteByte(']')
+	}
+
+	if reason := serial.ToString(m.Reason); len(reason) > 0 {
+		builder.WriteString(" ")
+		builder.WriteString(reason)
+	}
+
+	if len(m.Email) > 0 {
+		builder.WriteString(" email: ")
+		builder.WriteString(m.Email)
+	}
+
 	return builder.String()
 }
 
@@ -50,5 +64,5 @@ func AccessMessageFromContext(ctx context.Context) *AccessMessage {
 	if accessMessage, ok := ctx.Value(accessMessageKey).(*AccessMessage); ok {
 		return accessMessage
 	}
-	return nil 
+	return nil
 }

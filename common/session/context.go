@@ -1,6 +1,8 @@
 package session
 
-import "context"
+import (
+	"context"
+)
 
 type sessionKey int
 
@@ -9,6 +11,10 @@ const (
 	inboundSessionKey
 	outboundSessionKey
 	contentSessionKey
+	muxPreferedSessionKey
+	sockoptSessionKey
+	trackedConnectionErrorKey
+	handlerSessionKey // nolint: varcheck
 )
 
 // ContextWithID returns a new context with the given ID.
@@ -55,4 +61,75 @@ func ContentFromContext(ctx context.Context) *Content {
 		return content
 	}
 	return nil
+}
+
+// ContextWithMuxPrefered returns a new context with the given bool
+func ContextWithMuxPrefered(ctx context.Context, forced bool) context.Context {
+	return context.WithValue(ctx, muxPreferedSessionKey, forced)
+}
+
+// MuxPreferedFromContext returns value in this context, or false if not contained.
+func MuxPreferedFromContext(ctx context.Context) bool {
+	if val, ok := ctx.Value(muxPreferedSessionKey).(bool); ok {
+		return val
+	}
+	return false
+}
+
+// ContextWithSockopt returns a new context with Socket configs included
+func ContextWithSockopt(ctx context.Context, s *Sockopt) context.Context {
+	return context.WithValue(ctx, sockoptSessionKey, s)
+}
+
+// SockoptFromContext returns Socket configs in this context, or nil if not contained.
+func SockoptFromContext(ctx context.Context) *Sockopt {
+	if sockopt, ok := ctx.Value(sockoptSessionKey).(*Sockopt); ok {
+		return sockopt
+	}
+	return nil
+}
+
+func GetTransportLayerProxyTagFromContext(ctx context.Context) string {
+	if ContentFromContext(ctx) == nil {
+		return ""
+	}
+	return ContentFromContext(ctx).Attribute("transportLayerOutgoingTag")
+}
+
+func SetTransportLayerProxyTagToContext(ctx context.Context, tag string) context.Context {
+	if contentFromContext := ContentFromContext(ctx); contentFromContext == nil {
+		ctx = ContextWithContent(ctx, &Content{})
+	}
+	ContentFromContext(ctx).SetAttribute("transportLayerOutgoingTag", tag)
+	return ctx
+}
+
+func GetForcedOutboundTagFromContext(ctx context.Context) string {
+	if ContentFromContext(ctx) == nil {
+		return ""
+	}
+	return ContentFromContext(ctx).Attribute("forcedOutboundTag")
+}
+
+func SetForcedOutboundTagToContext(ctx context.Context, tag string) context.Context {
+	if contentFromContext := ContentFromContext(ctx); contentFromContext == nil {
+		ctx = ContextWithContent(ctx, &Content{})
+	}
+	ContentFromContext(ctx).SetAttribute("forcedOutboundTag", tag)
+	return ctx
+}
+
+type TrackedRequestErrorFeedback interface {
+	SubmitError(err error)
+}
+
+func SubmitOutboundErrorToOriginator(ctx context.Context, err error) {
+	if errorTracker := ctx.Value(trackedConnectionErrorKey); errorTracker != nil {
+		errorTracker := errorTracker.(TrackedRequestErrorFeedback)
+		errorTracker.SubmitError(err)
+	}
+}
+
+func TrackedConnectionError(ctx context.Context, tracker TrackedRequestErrorFeedback) context.Context {
+	return context.WithValue(ctx, trackedConnectionErrorKey, tracker)
 }

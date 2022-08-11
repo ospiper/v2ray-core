@@ -2,9 +2,11 @@ syntax = "proto3";
 
 package v2ray.core.app.reverse;
 option csharp_namespace = "V2Ray.Core.Proxy.Reverse";
-option go_package = "reverse";
+option go_package = "github.com/v2fly/v2ray-core/v5/app/reverse";
 option java_package = "com.v2ray.core.proxy.reverse";
 option java_multiple_files = true;
+
+import "common/protoext/extensions.proto";
 
 message Control {
   enum State {
@@ -19,7 +21,6 @@ message Control {
 message BridgeConfig {
   string tag = 1;
   string domain = 2;
-
 }
 
 message PortalConfig {
@@ -28,6 +29,9 @@ message PortalConfig {
 }
 
 message Config {
+  option (v2ray.core.common.protoext.message_opt).type = "service";
+  option (v2ray.core.common.protoext.message_opt).short_name = "reverse";
+
   repeated BridgeConfig bridge_config = 1;
   repeated PortalConfig portal_config = 2;
 }

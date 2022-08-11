@@ -1,3 +1,4 @@
+//go:build !wasm
 // +build !wasm
 
 package buf
@@ -7,7 +8,7 @@ import (
 	"runtime"
 	"syscall"
 
-	"v2ray.com/core/common/platform"
+	"github.com/v2fly/v2ray-core/v5/common/platform"
 )
 
 type allocStrategy struct {
@@ -120,13 +121,10 @@ func (r *ReadVReader) readMulti() (MultiBuffer, error) {
 func (r *ReadVReader) ReadMultiBuffer() (MultiBuffer, error) {
 	if r.alloc.Current() == 1 {
 		b, err := ReadBuffer(r.Reader)
-		if err != nil {
-			return nil, err
-		}
 		if b.IsFull() {
 			r.alloc.Adjust(1)
 		}
-		return MultiBuffer{b}, nil
+		return MultiBuffer{b}, err
 	}
 
 	mb, err := r.readMulti()

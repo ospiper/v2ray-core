@@ -1,29 +1,28 @@
-// +build !confonly
-
 package shadowsocks
 
 import (
 	"context"
 	"time"
 
-	"v2ray.com/core"
-	"v2ray.com/core/common"
-	"v2ray.com/core/common/buf"
-	"v2ray.com/core/common/log"
-	"v2ray.com/core/common/net"
-	"v2ray.com/core/common/protocol"
-	udp_proto "v2ray.com/core/common/protocol/udp"
-	"v2ray.com/core/common/session"
-	"v2ray.com/core/common/signal"
-	"v2ray.com/core/common/task"
-	"v2ray.com/core/features/policy"
-	"v2ray.com/core/features/routing"
-	"v2ray.com/core/transport/internet"
-	"v2ray.com/core/transport/internet/udp"
+	core "github.com/v2fly/v2ray-core/v5"
+	"github.com/v2fly/v2ray-core/v5/common"
+	"github.com/v2fly/v2ray-core/v5/common/buf"
+	"github.com/v2fly/v2ray-core/v5/common/log"
+	"github.com/v2fly/v2ray-core/v5/common/net"
+	"github.com/v2fly/v2ray-core/v5/common/net/packetaddr"
+	"github.com/v2fly/v2ray-core/v5/common/protocol"
+	udp_proto "github.com/v2fly/v2ray-core/v5/common/protocol/udp"
+	"github.com/v2fly/v2ray-core/v5/common/session"
+	"github.com/v2fly/v2ray-core/v5/common/signal"
+	"github.com/v2fly/v2ray-core/v5/common/task"
+	"github.com/v2fly/v2ray-core/v5/features/policy"
+	"github.com/v2fly/v2ray-core/v5/features/routing"
+	"github.com/v2fly/v2ray-core/v5/transport/internet"
+	"github.com/v2fly/v2ray-core/v5/transport/internet/udp"
 )
 
 type Server struct {
-	config        ServerConfig
+	config        *ServerConfig
 	user          *protocol.MemoryUser
 	policyManager policy.Manager
 }
@@ -41,7 +40,7 @@ func NewServer(ctx context.Context, config *ServerConfig) (*Server, error) {
 
 	v := core.MustFromContext(ctx)
 	s := &Server{
-		config:        *config,
+		config:        config,
 		user:          mUser,
 		policyManager: v.GetFeature(policy.ManagerType()).(policy.Manager),
 	}
@@ -72,10 +71,23 @@ func (s *Server) Process(ctx context.Context, network net.Network, conn internet
 }
 
 func (s *Server) handlerUDPPayload(ctx context.Context, conn internet.Connection, dispatcher routing.Dispatcher) error {
-	udpServer := udp.NewDispatcher(dispatcher, func(ctx context.Context, packet *udp_proto.Packet) {
+	udpDispatcherConstructor := udp.NewSplitDispatcher
+	switch s.config.PacketEncoding {
+	case packetaddr.PacketAddrType_None:
+		break
+	case packetaddr.PacketAddrType_Packet:
+		packetAddrDispatcherFactory := udp.NewPacketAddrDispatcherCreator(ctx)
+		udpDispatcherConstructor = packetAddrDispatcherFactory.NewPacketAddrDispatcher
+	}
+
+	udpServer := udpDispatcherConstructor(dispatcher, func(ctx context.Context, packet *udp_proto.Packet) {
 		request := protocol.RequestHeaderFromContext(ctx)
 		if request == nil {
-			return
+			request = &protocol.RequestHeader{
+				Port:    packet.Source.Port,
+				Address: packet.Source.Address,
+				User:    s.user,
+			}
 		}
 
 		payload := packet.Payload
@@ -90,7 +102,6 @@ func (s *Server) handlerUDPPayload(ctx context.Context, conn internet.Connection
 		conn.Write(data.Bytes())
 	})
 
-	account := s.user.Account.(*MemoryAccount)
 	inbound := session.InboundFromContext(ctx)
 	if inbound == nil {
 		panic("no inbound metadata")
@@ -120,31 +131,21 @@ func (s *Server) handlerUDPPayload(ctx context.Context, conn internet.Connection
 				continue
 			}
 
-			if request.Option.Has(RequestOptionOneTimeAuth) && account.OneTimeAuth == Account_Disabled {
-				newError("client payload enables OTA but server doesn't allow it").WriteToLog(session.ExportIDToError(ctx))
-				payload.Release()
-				continue
-			}
-
-			if !request.Option.Has(RequestOptionOneTimeAuth) && account.OneTimeAuth == Account_Enabled {
-				newError("client payload disables OTA but server forces it").WriteToLog(session.ExportIDToError(ctx))
-				payload.Release()
-				continue
-			}
-
+			currentPacketCtx := ctx
 			dest := request.Destination()
 			if inbound.Source.IsValid() {
-				ctx = log.ContextWithAccessMessage(ctx, &log.AccessMessage{
+				currentPacketCtx = log.ContextWithAccessMessage(ctx, &log.AccessMessage{
 					From:   inbound.Source,
 					To:     dest,
 					Status: log.AccessAccepted,
 					Reason: "",
+					Email:  request.User.Email,
 				})
 			}
-			newError("tunnelling request to ", dest).WriteToLog(session.ExportIDToError(ctx))
+			newError("tunnelling request to ", dest).WriteToLog(session.ExportIDToError(currentPacketCtx))
 
-			ctx = protocol.ContextWithRequestHeader(ctx, request)
-			udpServer.Dispatch(ctx, dest, data)
+			currentPacketCtx = protocol.ContextWithRequestHeader(currentPacketCtx, request)
+			udpServer.Dispatch(currentPacketCtx, dest, data)
 		}
 	}
 
@@ -180,6 +181,7 @@ func (s *Server) handleConnection(ctx context.Context, conn internet.Connection,
 		To:     dest,
 		Status: log.AccessAccepted,
 		Reason: "",
+		Email:  request.User.Email,
 	})
 	newError("tunnelling request to ", dest).WriteToLog(session.ExportIDToError(ctx))
 
@@ -232,7 +234,7 @@ func (s *Server) handleConnection(ctx context.Context, conn internet.Connection,
 		return nil
 	}
 
-	var requestDoneAndCloseWriter = task.OnSuccess(requestDone, task.Close(link.Writer))
+	requestDoneAndCloseWriter := task.OnSuccess(requestDone, task.Close(link.Writer))
 	if err := task.Run(ctx, requestDoneAndCloseWriter, responseDone); err != nil {
 		common.Interrupt(link.Reader)
 		common.Interrupt(link.Writer)

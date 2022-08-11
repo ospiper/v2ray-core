@@ -3,7 +3,7 @@ package buf
 import (
 	"io"
 
-	"v2ray.com/core/common/bytespool"
+	"github.com/v2fly/v2ray-core/v5/common/bytespool"
 )
 
 const (
@@ -11,25 +11,52 @@ const (
 	Size = 2048
 )
 
+var pool = bytespool.GetPool(Size)
+
 // Buffer is a recyclable allocation of a byte array. Buffer.Release() recycles
 // the buffer into an internal buffer pool, in order to recreate a buffer more
 // quickly.
 type Buffer struct {
-	v     []byte
-	start int32
-	end   int32
+	v         []byte
+	start     int32
+	end       int32
+	unmanaged bool
+}
+
+// New creates a Buffer with 0 length and 2K capacity.
+func New() *Buffer {
+	return &Buffer{
+		v: pool.Get().([]byte),
+	}
+}
+
+// FromBytes creates a Buffer with an existed bytearray
+func FromBytes(data []byte) *Buffer {
+	return &Buffer{
+		v:         data,
+		end:       int32(len(data)),
+		unmanaged: true,
+	}
+}
+
+// StackNew creates a new Buffer object on stack.
+// This method is for buffers that is released in the same function.
+func StackNew() Buffer {
+	return Buffer{
+		v: pool.Get().([]byte),
+	}
 }
 
 // Release recycles the buffer into an internal buffer pool.
 func (b *Buffer) Release() {
-	if b == nil || b.v == nil {
+	if b == nil || b.v == nil || b.unmanaged {
 		return
 	}
 
 	p := b.v
 	b.v = nil
 	b.Clear()
-	pool.Put(p)
+	pool.Put(p) // nolint: staticcheck
 }
 
 // Clear clears the content of the buffer, results an empty buffer with
@@ -131,7 +158,7 @@ func (b *Buffer) IsEmpty() bool {
 
 // IsFull returns true if the buffer has no more room to grow.
 func (b *Buffer) IsFull() bool {
-	return b.end == int32(len(b.v))
+	return b != nil && b.end == int32(len(b.v))
 }
 
 // Write implements Write method in io.Writer.
@@ -154,6 +181,28 @@ func (b *Buffer) WriteByte(v byte) error {
 // WriteString implements io.StringWriter.
 func (b *Buffer) WriteString(s string) (int, error) {
 	return b.Write([]byte(s))
+}
+
+// ReadByte implements io.ByteReader
+func (b *Buffer) ReadByte() (byte, error) {
+	if b.start == b.end {
+		return 0, io.EOF
+	}
+
+	nb := b.v[b.start]
+	b.start++
+	return nb, nil
+}
+
+// ReadBytes implements bufio.Reader.ReadBytes
+func (b *Buffer) ReadBytes(length int32) ([]byte, error) {
+	if b.end-b.start < length {
+		return nil, io.EOF
+	}
+
+	nb := b.v[b.start : b.start+length]
+	b.start += length
+	return nb, nil
 }
 
 // Read implements io.Reader.Read().
@@ -192,21 +241,4 @@ func (b *Buffer) ReadFullFrom(reader io.Reader, size int32) (int64, error) {
 // String returns the string form of this Buffer.
 func (b *Buffer) String() string {
 	return string(b.Bytes())
-}
-
-var pool = bytespool.GetPool(Size)
-
-// New creates a Buffer with 0 length and 2K capacity.
-func New() *Buffer {
-	return &Buffer{
-		v: pool.Get().([]byte),
-	}
-}
-
-// StackNew creates a new Buffer object on stack.
-// This method is for buffers that is released in the same function.
-func StackNew() Buffer {
-	return Buffer{
-		v: pool.Get().([]byte),
-	}
 }

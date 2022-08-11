@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"io"
 
-	"v2ray.com/core"
-	"v2ray.com/core/common/errors"
-	"v2ray.com/core/infra/conf"
-	json_reader "v2ray.com/core/infra/conf/json"
+	core "github.com/v2fly/v2ray-core/v5"
+	"github.com/v2fly/v2ray-core/v5/common/errors"
+	json_reader "github.com/v2fly/v2ray-core/v5/infra/conf/json"
+	v4 "github.com/v2fly/v2ray-core/v5/infra/conf/v4"
 )
 
 type offset struct {
@@ -38,16 +38,27 @@ func findOffset(b []byte, o int) *offset {
 	return &offset{line: line, char: char}
 }
 
-func LoadJSONConfig(reader io.Reader) (*core.Config, error) {
-	jsonConfig := &conf.Config{}
+// DecodeJSONConfig reads from reader and decode the config into *conf.Config
+// syntax error could be detected.
+func DecodeJSONConfig(reader io.Reader) (*v4.Config, error) {
+	jsonConfig := &v4.Config{}
+	err := DecodeJSON(reader, jsonConfig)
+	if err != nil {
+		return nil, err
+	}
+	return jsonConfig, nil
+}
 
+// DecodeJSON reads from reader and decode into target
+// syntax error could be detected.
+func DecodeJSON(reader io.Reader, target interface{}) error {
 	jsonContent := bytes.NewBuffer(make([]byte, 0, 10240))
 	jsonReader := io.TeeReader(&json_reader.Reader{
 		Reader: reader,
 	}, jsonContent)
 	decoder := json.NewDecoder(jsonReader)
 
-	if err := decoder.Decode(jsonConfig); err != nil {
+	if err := decoder.Decode(target); err != nil {
 		var pos *offset
 		cause := errors.Cause(err)
 		switch tErr := cause.(type) {
@@ -57,9 +68,18 @@ func LoadJSONConfig(reader io.Reader) (*core.Config, error) {
 			pos = findOffset(jsonContent.Bytes(), int(tErr.Offset))
 		}
 		if pos != nil {
-			return nil, newError("failed to read config file at line ", pos.line, " char ", pos.char).Base(err)
+			return newError("failed to read config file at line ", pos.line, " char ", pos.char).Base(err)
 		}
-		return nil, newError("failed to read config file").Base(err)
+		return newError("failed to read config file").Base(err)
+	}
+
+	return nil
+}
+
+func LoadJSONConfig(reader io.Reader) (*core.Config, error) {
+	jsonConfig, err := DecodeJSONConfig(reader)
+	if err != nil {
+		return nil, err
 	}
 
 	pbConfig, err := jsonConfig.Build()

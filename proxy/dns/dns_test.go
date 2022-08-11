@@ -7,25 +7,25 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/miekg/dns"
+	"google.golang.org/protobuf/types/known/anypb"
 
-	"v2ray.com/core"
-	"v2ray.com/core/app/dispatcher"
-	dnsapp "v2ray.com/core/app/dns"
-	"v2ray.com/core/app/policy"
-	"v2ray.com/core/app/proxyman"
-	_ "v2ray.com/core/app/proxyman/inbound"
-	_ "v2ray.com/core/app/proxyman/outbound"
-	"v2ray.com/core/common"
-	"v2ray.com/core/common/net"
-	"v2ray.com/core/common/serial"
-	dns_proxy "v2ray.com/core/proxy/dns"
-	"v2ray.com/core/proxy/dokodemo"
-	"v2ray.com/core/testing/servers/tcp"
-	"v2ray.com/core/testing/servers/udp"
+	core "github.com/v2fly/v2ray-core/v5"
+	"github.com/v2fly/v2ray-core/v5/app/dispatcher"
+	dnsapp "github.com/v2fly/v2ray-core/v5/app/dns"
+	"github.com/v2fly/v2ray-core/v5/app/policy"
+	"github.com/v2fly/v2ray-core/v5/app/proxyman"
+	_ "github.com/v2fly/v2ray-core/v5/app/proxyman/inbound"
+	_ "github.com/v2fly/v2ray-core/v5/app/proxyman/outbound"
+	"github.com/v2fly/v2ray-core/v5/common"
+	"github.com/v2fly/v2ray-core/v5/common/net"
+	"github.com/v2fly/v2ray-core/v5/common/serial"
+	dns_proxy "github.com/v2fly/v2ray-core/v5/proxy/dns"
+	"github.com/v2fly/v2ray-core/v5/proxy/dokodemo"
+	"github.com/v2fly/v2ray-core/v5/testing/servers/tcp"
+	"github.com/v2fly/v2ray-core/v5/testing/servers/udp"
 )
 
-type staticHandler struct {
-}
+type staticHandler struct{}
 
 func (*staticHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	ans := new(dns.Msg)
@@ -44,7 +44,8 @@ func (*staticHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	for _, q := range r.Question {
-		if q.Name == "google.com." && q.Qtype == dns.TypeA {
+		switch {
+		case q.Name == "google.com." && q.Qtype == dns.TypeA:
 			if clientIP == nil {
 				rr, _ := dns.NewRR("google.com. IN A 8.8.8.8")
 				ans.Answer = append(ans.Answer, rr)
@@ -52,18 +53,22 @@ func (*staticHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 				rr, _ := dns.NewRR("google.com. IN A 8.8.4.4")
 				ans.Answer = append(ans.Answer, rr)
 			}
-		} else if q.Name == "facebook.com." && q.Qtype == dns.TypeA {
+
+		case q.Name == "facebook.com." && q.Qtype == dns.TypeA:
 			rr, _ := dns.NewRR("facebook.com. IN A 9.9.9.9")
 			ans.Answer = append(ans.Answer, rr)
-		} else if q.Name == "ipv6.google.com." && q.Qtype == dns.TypeA {
+
+		case q.Name == "ipv6.google.com." && q.Qtype == dns.TypeA:
 			rr, err := dns.NewRR("ipv6.google.com. IN A 8.8.8.7")
 			common.Must(err)
 			ans.Answer = append(ans.Answer, rr)
-		} else if q.Name == "ipv6.google.com." && q.Qtype == dns.TypeAAAA {
+
+		case q.Name == "ipv6.google.com." && q.Qtype == dns.TypeAAAA:
 			rr, err := dns.NewRR("ipv6.google.com. IN AAAA 2001:4860:4860::8888")
 			common.Must(err)
 			ans.Answer = append(ans.Answer, rr)
-		} else if q.Name == "notexist.google.com." && q.Qtype == dns.TypeAAAA {
+
+		case q.Name == "notexist.google.com." && q.Qtype == dns.TypeAAAA:
 			ans.MsgHdr.Rcode = dns.RcodeNameError
 		}
 	}
@@ -86,7 +91,7 @@ func TestUDPDNSTunnel(t *testing.T) {
 
 	serverPort := udp.PickPort()
 	config := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&dnsapp.Config{
 				NameServers: []*net.Endpoint{
 					{
@@ -135,7 +140,7 @@ func TestUDPDNSTunnel(t *testing.T) {
 		m1.Id = dns.Id()
 		m1.RecursionDesired = true
 		m1.Question = make([]dns.Question, 1)
-		m1.Question[0] = dns.Question{"google.com.", dns.TypeA, dns.ClassINET}
+		m1.Question[0] = dns.Question{Name: "google.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET}
 
 		c := new(dns.Client)
 		in, _, err := c.Exchange(m1, "127.0.0.1:"+strconv.Itoa(int(serverPort)))
@@ -159,9 +164,10 @@ func TestUDPDNSTunnel(t *testing.T) {
 		m1.Id = dns.Id()
 		m1.RecursionDesired = true
 		m1.Question = make([]dns.Question, 1)
-		m1.Question[0] = dns.Question{"ipv4only.google.com.", dns.TypeAAAA, dns.ClassINET}
+		m1.Question[0] = dns.Question{Name: "ipv4only.google.com.", Qtype: dns.TypeAAAA, Qclass: dns.ClassINET}
 
 		c := new(dns.Client)
+		c.Timeout = 10 * time.Second
 		in, _, err := c.Exchange(m1, "127.0.0.1:"+strconv.Itoa(int(serverPort)))
 		common.Must(err)
 
@@ -175,7 +181,7 @@ func TestUDPDNSTunnel(t *testing.T) {
 		m1.Id = dns.Id()
 		m1.RecursionDesired = true
 		m1.Question = make([]dns.Question, 1)
-		m1.Question[0] = dns.Question{"notexist.google.com.", dns.TypeAAAA, dns.ClassINET}
+		m1.Question[0] = dns.Question{Name: "notexist.google.com.", Qtype: dns.TypeAAAA, Qclass: dns.ClassINET}
 
 		c := new(dns.Client)
 		in, _, err := c.Exchange(m1, "127.0.0.1:"+strconv.Itoa(int(serverPort)))
@@ -202,7 +208,7 @@ func TestTCPDNSTunnel(t *testing.T) {
 
 	serverPort := tcp.PickPort()
 	config := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&dnsapp.Config{
 				NameServer: []*dnsapp.NameServer{
 					{
@@ -252,7 +258,7 @@ func TestTCPDNSTunnel(t *testing.T) {
 	m1.Id = dns.Id()
 	m1.RecursionDesired = true
 	m1.Question = make([]dns.Question, 1)
-	m1.Question[0] = dns.Question{"google.com.", dns.TypeA, dns.ClassINET}
+	m1.Question[0] = dns.Question{Name: "google.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET}
 
 	c := &dns.Client{
 		Net: "tcp",
@@ -288,7 +294,7 @@ func TestUDP2TCPDNSTunnel(t *testing.T) {
 
 	serverPort := tcp.PickPort()
 	config := &core.Config{
-		App: []*serial.TypedMessage{
+		App: []*anypb.Any{
 			serial.ToTypedMessage(&dnsapp.Config{
 				NameServer: []*dnsapp.NameServer{
 					{
@@ -342,7 +348,7 @@ func TestUDP2TCPDNSTunnel(t *testing.T) {
 	m1.Id = dns.Id()
 	m1.RecursionDesired = true
 	m1.Question = make([]dns.Question, 1)
-	m1.Question[0] = dns.Question{"google.com.", dns.TypeA, dns.ClassINET}
+	m1.Question[0] = dns.Question{Name: "google.com.", Qtype: dns.TypeA, Qclass: dns.ClassINET}
 
 	c := &dns.Client{
 		Net: "tcp",

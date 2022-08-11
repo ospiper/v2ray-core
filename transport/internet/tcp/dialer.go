@@ -1,15 +1,14 @@
-// +build !confonly
-
 package tcp
 
 import (
 	"context"
 
-	"v2ray.com/core/common"
-	"v2ray.com/core/common/net"
-	"v2ray.com/core/common/session"
-	"v2ray.com/core/transport/internet"
-	"v2ray.com/core/transport/internet/tls"
+	"github.com/v2fly/v2ray-core/v5/common"
+	"github.com/v2fly/v2ray-core/v5/common/net"
+	"github.com/v2fly/v2ray-core/v5/common/serial"
+	"github.com/v2fly/v2ray-core/v5/common/session"
+	"github.com/v2fly/v2ray-core/v5/transport/internet"
+	"github.com/v2fly/v2ray-core/v5/transport/internet/tls"
 )
 
 // Dial dials a new TCP connection to the given destination.
@@ -21,17 +20,20 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 	}
 
 	if config := tls.ConfigFromStreamSettings(streamSettings); config != nil {
-		tlsConfig := config.GetTLSConfig(tls.WithDestination(dest), tls.WithNextProto("h2"))
-		if config.IsExperiment8357() {
-			conn = tls.UClient(conn, tlsConfig)
-		} else {
-			conn = tls.Client(conn, tlsConfig)
-		}
+		tlsConfig := config.GetTLSConfig(tls.WithDestination(dest))
+		/*
+			if config.IsExperiment8357() {
+				conn = tls.UClient(conn, tlsConfig)
+			} else {
+				conn = tls.Client(conn, tlsConfig)
+			}
+		*/
+		conn = tls.Client(conn, tlsConfig)
 	}
 
 	tcpSettings := streamSettings.ProtocolSettings.(*Config)
 	if tcpSettings.HeaderSettings != nil {
-		headerConfig, err := tcpSettings.HeaderSettings.GetInstance()
+		headerConfig, err := serial.GetInstanceOf(tcpSettings.HeaderSettings)
 		if err != nil {
 			return nil, newError("failed to get header settings").Base(err).AtError()
 		}
