@@ -19,7 +19,7 @@ require (
 	github.com/miekg/dns v1.1.50
 	github.com/mustafaturan/bus v1.0.2
 	github.com/pelletier/go-toml v1.9.5
-	github.com/pires/go-proxyproto v0.6.2
+	github.com/pires/go-proxyproto v0.7.0
 	github.com/seiflotfy/cuckoofilter v0.0.0-20220312154859-af7fbb8e765b
 	github.com/stretchr/testify v1.8.0
 	github.com/v2fly/BrowserBridge v0.0.0-20210430233438-0570fc1d7d08
