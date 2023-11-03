@@ -1,10 +1,11 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"go/build"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -46,7 +47,7 @@ func GetRuntimeEnv(key string) (string, error) {
 	}
 	var data []byte
 	var runtimeEnv string
-	data, readErr := ioutil.ReadFile(file)
+	data, readErr := os.ReadFile(file)
 	if readErr != nil {
 		return "", readErr
 	}
@@ -118,7 +119,7 @@ func getInstalledProtocVersion(protocPath string) (string, error) {
 	if cmdErr != nil {
 		return "", cmdErr
 	}
-	versionRegexp := regexp.MustCompile(`protoc\s*(\d+\.\d+\.\d+)`)
+	versionRegexp := regexp.MustCompile(`protoc\s*(\d+\.\d+(\.\d)*)`)
 	matched := versionRegexp.FindStringSubmatch(string(output))
 	return matched[1], nil
 }
@@ -127,6 +128,9 @@ func parseVersion(s string, width int) int64 {
 	strList := strings.Split(s, ".")
 	format := fmt.Sprintf("%%s%%0%ds", width)
 	v := ""
+	if len(strList) == 2 {
+		strList = append([]string{"4"}, strList...)
+	}
 	for _, value := range strList {
 		v = fmt.Sprintf(format, v, value)
 	}
@@ -247,4 +251,66 @@ Download it from https://github.com/protocolbuffers/protobuf/releases
 			}
 		}
 	}
+
+	normalizeWalkErr := filepath.Walk("./", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Println(err)
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		filename := filepath.Base(path)
+		if strings.HasSuffix(filename, ".pb.go") &&
+			path != "config.pb.go" {
+			if err := NormalizeGeneratedProtoFile(path); err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+		}
+
+		return nil
+	})
+	if normalizeWalkErr != nil {
+		fmt.Println(normalizeWalkErr)
+		os.Exit(1)
+	}
+}
+
+func NormalizeGeneratedProtoFile(path string) error {
+	fd, err := os.OpenFile(path, os.O_RDWR, 0o644)
+	if err != nil {
+		return err
+	}
+
+	_, err = fd.Seek(0, os.SEEK_SET)
+	if err != nil {
+		return err
+	}
+	out := bytes.NewBuffer(nil)
+	scanner := bufio.NewScanner(fd)
+	valid := false
+	for scanner.Scan() {
+		if !valid && !strings.HasPrefix(scanner.Text(), "package ") {
+			continue
+		}
+		valid = true
+		out.Write(scanner.Bytes())
+		out.Write([]byte("\n"))
+	}
+	_, err = fd.Seek(0, os.SEEK_SET)
+	if err != nil {
+		return err
+	}
+	err = fd.Truncate(0)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(fd, bytes.NewReader(out.Bytes()))
+	if err != nil {
+		return err
+	}
+	return nil
 }
