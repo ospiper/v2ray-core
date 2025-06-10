@@ -1,6 +1,6 @@
 module github.com/v2fly/v2ray-core/v5
 
-go 1.20
+go 1.21
 
 require (
 	github.com/adrg/xdg v0.4.0
@@ -9,7 +9,7 @@ require (
 	github.com/go-playground/validator/v10 v10.15.5
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.3
-	github.com/google/go-cmp v0.6.0
+	github.com/google/go-cmp v0.7.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/websocket v1.5.0
 	github.com/jhump/protoreflect v1.15.3
